@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
     paths: ["digest/**"]
+  workflow_dispatch: {}
 
 jobs:
   post:
@@ -17,11 +18,18 @@ jobs:
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: |
-          FILE=$(git diff --name-only HEAD^ HEAD -- 'digest/*.md' | head -1)
+          # Secretに混入しがちな空白・改行・引用符を除去（貼り付け事故対策）
+          URL=$(printf '%s' "$SLACK_WEBHOOK_URL" | tr -d "'\"[:space:]")
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # 手動実行時は最新のdigestを再送する
+            FILE=$(ls digest/*.md 2>/dev/null | sort | tail -1)
+          else
+            FILE=$(git diff --name-only HEAD^ HEAD -- 'digest/*.md' | head -1)
+          fi
           if [ -z "$FILE" ] || [ ! -f "$FILE" ]; then
-            echo "no new digest file in this push; skip"
+            echo "no digest file to post; skip"
             exit 0
           fi
           echo "posting: $FILE"
           jq -Rs '{text: .}' < "$FILE" \
-            | curl -sf -X POST -H 'Content-Type: application/json' --data @- "$SLACK_WEBHOOK_URL"
+            | curl -sf -X POST -H 'Content-Type: application/json' --data @- "$URL"
