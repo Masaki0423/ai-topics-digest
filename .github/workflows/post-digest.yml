@@ -1,0 +1,27 @@
+name: post-digest
+
+on:
+  push:
+    branches: [main]
+    paths: ["digest/**"]
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Post new digest to Slack
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          FILE=$(git diff --name-only HEAD^ HEAD -- 'digest/*.md' | head -1)
+          if [ -z "$FILE" ] || [ ! -f "$FILE" ]; then
+            echo "no new digest file in this push; skip"
+            exit 0
+          fi
+          echo "posting: $FILE"
+          jq -Rs '{text: .}' < "$FILE" \
+            | curl -sf -X POST -H 'Content-Type: application/json' --data @- "$SLACK_WEBHOOK_URL"
